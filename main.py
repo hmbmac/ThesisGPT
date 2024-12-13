@@ -1,6 +1,8 @@
 import asyncio
+import markdown
+import markdown_to_json as mdj
 from fastapi import FastAPI, Request, HTTPException, Query
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from llama_index.core.workflow import Event
 from llama_index.core.schema import NodeWithScore
 from llama_index.core import SimpleDirectoryReader, VectorStoreIndex, StorageContext
@@ -139,7 +141,7 @@ class CitationQueryEngineWorkflow(Workflow):
             print("Index is empty, load some documents before querying!")
             return None
 
-        retriever = ev.index.as_retriever(similarity_top_k=25)
+        retriever = ev.index.as_retriever(similarity_top_k=ev.get("n_sources", 5))
         nodes = retriever.retrieve(query)
         print(f"Retrieved {len(nodes)} nodes.")
         return RetrieverEvent(nodes=nodes)
@@ -209,27 +211,32 @@ class CitationQueryEngineWorkflow(Workflow):
 # This is an example setup; customize as needed.
 
 
-async def run_workflow(query):
+async def run_workflow(query, number_of_sources):
         w = CitationQueryEngineWorkflow(timeout=600)
-        response = await w.run(query=query, index=data_index)
+        response = await w.run(query=query, index=data_index, n_sources=number_of_sources)
         return response
 
 @app.post('/query')
-async def handle_query(query: str = Query(..., description="The query string to search for")):
+async def handle_query(
+    query: str = Query(..., description="The question or topic you want to query."),
+    number_of_sources: int = Query(5, description="The number of sources desired, defaults to 5. The more sources, the more detailed the response, but the longer it takes. For reference, 5 sources takes about 30 seconds.")
+):
     if not query:
         raise HTTPException(status_code=400, detail="Query parameter is missing")
     
     # Run the async workflow within an event loop
-    result_event = await run_workflow(query)
-    print(result_event)
+    result_event = await run_workflow(query, number_of_sources)
+    print(type(result_event))
     if result_event is None:
         raise HTTPException(status_code=404, detail="No results found")
 
-    return JSONResponse(content={'response': result_event.result})
+    return JSONResponse(content={mdj.jsonify(result_event.response), result_event.get_formatted_sources()})
 
 @app.get('/')
 async def index():
     return RedirectResponse(url="/docs")
 
 if __name__ == '__main__':
-    uvicorn.run("main:app", host='localhost', port=8080, reload=True)
+    import os
+    port = int(os.environ.get('PORT', 8080))
+    uvicorn.run("main:app", host='0.0.0.0', port=port, reload=True)
