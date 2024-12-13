@@ -1,0 +1,10 @@
+# .dockerignore
+.git
+.gitignore
+.gitattributes
+.github
+.venv
+__pycache__
+*.pyc
+.DS_Store
+.heroku

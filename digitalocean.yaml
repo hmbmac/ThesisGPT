@@ -1,0 +1,8 @@
+# digitalocean.yml
+name: thesisgpt
+services:
+  - name: web
+    environment_slug: python
+    instance_size_slug: professional-1
+    instance_count: 1
+    dockerfile_path: ./Dockerfile
