@@ -1,11 +1,10 @@
 import asyncio
-import markdown
 import markdown_to_json as mdj
-from fastapi import FastAPI, Request, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse, RedirectResponse
 from llama_index.core.workflow import Event
 from llama_index.core.schema import NodeWithScore
-from llama_index.core import SimpleDirectoryReader, VectorStoreIndex, StorageContext
+from llama_index.core import StorageContext
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.storage.docstore.simple_docstore import SimpleDocumentStore
 from llama_index.core.vector_stores.simple import SimpleVectorStore
@@ -18,7 +17,6 @@ from llama_index.core.workflow import (
     step,
 )
 from llama_index.llms.openai import OpenAI
-from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.core.schema import (
     MetadataMode,
     NodeWithScore,
@@ -27,8 +25,6 @@ from llama_index.core.schema import (
 
 from llama_index.core import (
     load_index_from_storage,
-    load_indices_from_storage,
-    load_graph_from_storage,
 )
 
 from llama_index.core.response_synthesizers import (
