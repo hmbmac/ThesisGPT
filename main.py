@@ -235,7 +235,3 @@ async def handle_query(
 async def index():
     return RedirectResponse(url="/docs")
 
-if __name__ == '__main__':
-    import os
-    port = int(os.environ.get('PORT', 8080))
-    uvicorn.run("main:app", host='0.0.0.0', port=port)
