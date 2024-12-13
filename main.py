@@ -1,4 +1,5 @@
 import asyncio
+import markdown
 import markdown_to_json as mdj
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -39,8 +40,8 @@ from llama_index.core.node_parser import SentenceSplitter
 import uvicorn
 
 
-CITATION_TEMPLATE = PromptTemplate("""You are a thesis supervisor at a university. You have access to a collection of academic papers and books covering the topics of cultural diplomacy in the Gulf, Middle Eastern politics, and the vastness of the internet.
-You are tasked with helping a student prepare his thesis defence to the best of your ability. To this end, you will need to answer his questions with the utmost accuracy, using primarily verified information from reputable sources with a prioritization of your personal database.
+CITATION_TEMPLATE = PromptTemplate("""You are a thesis supervisor at a university. You have access to a collection of academic papers and books covering the topics of cultural diplomacy in the Gulf, Middle Eastern politics.
+You are tasked with helping a student prepare his thesis defence to the best of your ability. To this end, you will need to answer his questions with the utmost accuracy, using primarily the documents available to you.
 If the question contains multiple parts, you must make sure to address every single one expletively and accurately using information from the knowledgebase.
 If the documents retrieved contain quantitative metrics (e.g: statistics, tabular information) relevant to the question, you must include them.
 You are encouraged to combine and compare information from all of your knowledgebases to compose your answer, as long as you stay accurate.
@@ -51,7 +52,7 @@ Once you have scoured your personal databases:
 - You MUST cite your sources in line, and provide links when available.
 - You MUST provide an analysis of any numerical data you are using.
 - You MUST provide a clear answer, and make suggestions for further research when helpful or necessary.
-- You can then use your own knowledge and experience as a thesis defender to contextualize your response.
+- After using the provided documents, you can then use your own knowledge as a thesis defender, and the vastness of the internet to contextualize your response.
 
 You MUST cite your sources. Your answers must be long and detailed, and you must provide as much context as possible. You must answere in a legible, structured format.
 
@@ -64,7 +65,7 @@ Answer:
 
 {context_str}""")
 
-CITATION_TEMPLATE_REFINE = PromptTemplate("""YYou are a thesis supervisor at a university. You have access to a collection of academic papers and books covering the topics of cultural diplomacy in the Gulf, Middle Eastern politics, and the vastness of the internet.
+CITATION_TEMPLATE_REFINE = PromptTemplate("""You are a thesis supervisor at a university. You have access to a collection of academic papers and books covering the topics of cultural diplomacy in the Gulf, Middle Eastern politics.
 You are tasked with helping a student prepare his thesis defence to the best of your ability. To this end, you will need to answer his questions with the utmost accuracy, using primarily verified information from reputable sources with a prioritization of your personal database.
 If the question contains multiple parts, you must make sure to address every single one expletively and accurately using information from the knowledgebase.
 If the
@@ -77,11 +78,9 @@ Once you have scoured your personal databases:
 - You MUST provide a clear answer, and make suggestions for further research when helpful or necessary.
 - You can then use your own knowledge and experience as a thesis defender to contextualize your response.
 
-You MUST cite your document sources.
-
 If none of your source documents hold the answer, you should make that clear. Finally, you must look at the users original question and the final answer you generated. Very precisely identify what information you think is missing, and suggest the user further exploratory questions \n
 The user can ask follow up questions to you and you want to guide the user to information you feel was missed and should be added from the perspective of a thesis supervisor. 
-You must include inline citations for information provided from the source documents in the form (Document Name). You must give your response in a structured and readable format.
+You must include inline citations for information provided from the source documents in the form (Document Name). You must give your response in a structured and readable format, and you must use markdown headings (#) to separate different sections of your response. You MUST NOT use bold or italics in your response.
 
 You have already been given an answer. Now you must refine it!
 For example:
@@ -225,13 +224,16 @@ async def handle_query(
     
     # Run the async workflow within an event loop
     result_event = await run_workflow(query, number_of_sources)
-    print(type(result_event))
     if result_event is None:
         raise HTTPException(status_code=404, detail="No results found")
+    print(result_event)
+    print("")
+    print(mdj.jsonify(result_event.response))
+    print(mdj.dictify(result_event.response))
+    print(result_event.get_formatted_sources())
 
     return JSONResponse(content=mdj.dictify(result_event.response))
 
 @app.get('/')
 async def index():
     return RedirectResponse(url="/docs")
-
