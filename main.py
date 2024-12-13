@@ -1,5 +1,3 @@
-import asyncio
-import markdown
 import markdown_to_json as mdj
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -18,7 +16,6 @@ from llama_index.core.workflow import (
     step,
 )
 from llama_index.llms.openai import OpenAI
-from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.core.schema import (
     MetadataMode,
     NodeWithScore,
@@ -37,7 +34,6 @@ from llama_index.core.response_synthesizers import (
 )
 from typing import Union, List
 from llama_index.core.node_parser import SentenceSplitter
-import uvicorn
 
 
 CITATION_TEMPLATE = PromptTemplate("""You are a thesis supervisor at a university. You have access to a collection of academic papers and books covering the topics of cultural diplomacy in the Gulf, Middle Eastern politics.
