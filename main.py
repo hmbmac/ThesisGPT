@@ -1,3 +1,5 @@
+import asyncio
+import markdown
 import markdown_to_json as mdj
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -16,6 +18,7 @@ from llama_index.core.workflow import (
     step,
 )
 from llama_index.llms.openai import OpenAI
+from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.core.schema import (
     MetadataMode,
     NodeWithScore,
@@ -34,6 +37,7 @@ from llama_index.core.response_synthesizers import (
 )
 from typing import Union, List
 from llama_index.core.node_parser import SentenceSplitter
+import uvicorn
 
 
 CITATION_TEMPLATE = PromptTemplate("""You are a thesis supervisor at a university. You have access to a collection of academic papers and books covering the topics of cultural diplomacy in the Gulf, Middle Eastern politics.
@@ -76,7 +80,7 @@ Once you have scoured your personal databases:
 
 If none of your source documents hold the answer, you should make that clear. Finally, you must look at the users original question and the final answer you generated. Very precisely identify what information you think is missing, and suggest the user further exploratory questions \n
 The user can ask follow up questions to you and you want to guide the user to information you feel was missed and should be added from the perspective of a thesis supervisor. 
-You must include inline citations for information provided from the source documents in the form (Document Name). You must give your response in a structured and readable format, and you must use markdown headings (#) to separate different sections of your response. You MUST NOT use bold or italics in your response.
+You MUST include inline citations for information provided from the source documents in the form (Source: Document Name). You must give your response in a structured and readable format, and you must use markdown headings (#) to separate different sections of your response. You MUST NOT use bold or italics in your response. You MUST list your sources at the end of your response.
 
 You have already been given an answer. Now you must refine it!
 For example:
@@ -101,12 +105,24 @@ Answer:
 """)
 
 app = FastAPI()
-storage_context = StorageContext.from_defaults(
+
+# Initialize storage context and data index in an async function
+storage_context = None
+data_index = None
+
+async def initialize_storage_context():
+    global storage_context, data_index
+    storage_context = StorageContext.from_defaults(
         docstore=SimpleDocumentStore.from_persist_dir(persist_dir="./VectorStore"),
         vector_store=SimpleVectorStore.from_persist_dir(persist_dir="./VectorStore"),
         index_store=SimpleIndexStore.from_persist_dir(persist_dir="./VectorStore"),
     )
-data_index = load_index_from_storage(storage_context)
+    data_index = load_index_from_storage(storage_context)
+
+# Endpoint to trigger storage initialization
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(initialize_storage_context())
 
 class RetrieverEvent(Event):
     """Result of running retrieval"""
@@ -118,9 +134,7 @@ class CreateCitationsEvent(Event):
 
 class CitationQueryEngineWorkflow(Workflow):
     @step
-    async def retrieve(
-        self, ctx: Context, ev: StartEvent
-    ) -> Union[RetrieverEvent, None]:
+    async def retrieve(self, ctx: Context, ev: StartEvent) -> Union[RetrieverEvent, None]:
         "Entry point for RAG, triggered by a StartEvent with `query`."
         query = ev.get("query")
         if not query:
@@ -141,50 +155,25 @@ class CitationQueryEngineWorkflow(Workflow):
         return RetrieverEvent(nodes=nodes)
 
     @step
-    async def create_citation_nodes(
-        self, ev: RetrieverEvent
-    ) -> CreateCitationsEvent:
-        """
-        Modify retrieved nodes to create granular sources for citations.
-
-        Takes a list of NodeWithScore objects and splits their content
-        into smaller chunks, creating new NodeWithScore objects for each chunk.
-        Each new node is labeled as a numbered source, allowing for more precise
-        citation in query results.
-
-        Args:
-            nodes (List[NodeWithScore]): A list of NodeWithScore objects to be processed.
-
-        Returns:
-            List[NodeWithScore]: A new list of NodeWithScore objects, where each object
-            represents a smaller chunk of the original nodes, labeled as a source.
-        """
+    async def create_citation_nodes(self, ev: RetrieverEvent) -> CreateCitationsEvent:
+        """Modify retrieved nodes to create granular sources for citations."""
         nodes = ev.nodes
-        new_nodes: List[NodeWithScore] = []
+        new_nodes = []
 
-        text_splitter = SentenceSplitter(
-            chunk_size=750,
-            chunk_overlap=100,
-        )
+        text_splitter = SentenceSplitter(chunk_size=750, chunk_overlap=100)
 
         for node in nodes:
-            text_chunks = text_splitter.split_text(
-                node.node.get_content(metadata_mode=MetadataMode.NONE)
-            )
+            text_chunks = text_splitter.split_text(node.node.get_content(metadata_mode=MetadataMode.NONE))
             for text_chunk in text_chunks:
                 text = f"Source {len(new_nodes)+1}: {node.dict()['node']['relationships']['1']['metadata']['title']}\n{text_chunk}\n"
-                new_node = NodeWithScore(
-                    node=TextNode.model_validate(node.node), score=node.score
-                )
+                new_node = NodeWithScore(node=TextNode.model_validate(node.node), score=node.score)
                 new_node.node.text = text
                 new_nodes.append(new_node)
         print(f"Created citations.")
         return CreateCitationsEvent(nodes=new_nodes)
 
     @step
-    async def synthesize(
-        self, ctx: Context, ev: CreateCitationsEvent
-    ) -> StopEvent:
+    async def synthesize(self, ctx: Context, ev: CreateCitationsEvent) -> StopEvent:
         """Return a streaming response using the retrieved nodes."""
         llm = OpenAI(model="gpt-4o", timeout=60)
         query = await ctx.get("query", default=None)
@@ -201,16 +190,12 @@ class CitationQueryEngineWorkflow(Workflow):
         print(f"Done {result}!")
         return StopEvent(result=result)
 
-# Initialize your index here (e.g., loading documents and creating an index)
-# This is an example setup; customize as needed.
-
-
 async def run_workflow(query, number_of_sources):
-        w = CitationQueryEngineWorkflow(timeout=600)
-        response = await w.run(query=query, index=data_index, n_sources=number_of_sources)
-        return response
+    w = CitationQueryEngineWorkflow(timeout=600)
+    response = await w.run(query=query, index=data_index, n_sources=number_of_sources)
+    return response
 
-@app.post('/query')
+@app.post('/query', response_class=JSONResponse)
 async def handle_query(
     query: str = Query(..., description="The question or topic you want to query."),
     number_of_sources: int = Query(5, description="The number of sources desired, defaults to 5. The more sources, the more detailed the response, but the longer it takes. For reference, 5 sources takes about 30 seconds.")
@@ -218,15 +203,12 @@ async def handle_query(
     if not query:
         raise HTTPException(status_code=400, detail="Query parameter is missing")
     
-    # Run the async workflow within an event loop
+    if data_index is None:
+        await initialize_storage_context()
+
     result_event = await run_workflow(query, number_of_sources)
     if result_event is None:
         raise HTTPException(status_code=404, detail="No results found")
-    print(result_event)
-    print("")
-    print(mdj.jsonify(result_event.response))
-    print(mdj.dictify(result_event.response))
-    print(result_event.get_formatted_sources())
 
     return JSONResponse(content=mdj.dictify(result_event.response))
 
