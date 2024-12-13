@@ -48,6 +48,7 @@ llama-index-readers-llama-parse==0.4.0
 llama-index-vector-stores-qdrant==0.4.0
 llama-parse==0.5.17
 load-dotenv==0.1.0
+markdown_to_json==2.1.2
 marshmallow==3.23.1
 multidict==6.1.0
 mypy-extensions==1.0.0

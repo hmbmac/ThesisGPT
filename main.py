@@ -1,5 +1,4 @@
 import asyncio
-import markdown
 import markdown_to_json as mdj
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -230,7 +229,7 @@ async def handle_query(
     if result_event is None:
         raise HTTPException(status_code=404, detail="No results found")
 
-    return JSONResponse(content={mdj.jsonify(result_event.response), result_event.get_formatted_sources()})
+    return JSONResponse(content=mdj.dictify(result_event.response))
 
 @app.get('/')
 async def index():
